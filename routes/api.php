@@ -2,8 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\UserController;
-use App\Http\Controllers\StudentController;
+use App\Http\Controllers\Api\ApiController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -19,14 +18,13 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::get('students',[UserController::class,'index']);
+Route::post("register", [ApiController::class, "register"]);
+Route::post("login", [ApiController::class, "login"]);
 
-Route::post('students',[UserController::class,'store']);
+Route::group([
+    "middleware" => ["auth:api"]
+], function(){
 
-Route::get('students/{student}',[UserController::class,'show']);
-
-Route::put('students/{student}',[UserController::class,'update']);
-
-Route::delete('students/{student}',[UserController::class,'destroy']);
-
-
+    Route::get("profile", [ApiController::class, "profile"]);
+    Route::get("logout", [ApiController::class, "logout"]);
+});
