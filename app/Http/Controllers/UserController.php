@@ -2,82 +2,128 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\student;
-use Illuminate\Http\Request;
-
-use Validator;
+use App\Models\User;
+use App\Http\Requests\StoreUserRequest;
+use App\Http\Requests\UpdateUserRequest;
+use Illuminate\View\View;
+use Illuminate\Http\RedirectResponse;
+use Spatie\Permission\Models\Role;
+use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
     /**
+     * Instantiate a new UserController instance.
+     */
+    public function __construct()
+    {
+        $this->middleware('auth');
+        $this->middleware('permission:create-user|edit-user|delete-user', ['only' => ['index','show']]);
+        $this->middleware('permission:create-user', ['only' => ['create','store']]);
+        $this->middleware('permission:edit-user', ['only' => ['edit','update']]);
+        $this->middleware('permission:delete-user', ['only' => ['destroy']]);
+    }
+
+    /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(): View
     {
-        return response()->json([
-            'students'=>student::get()
-            ]);
-            
+        return view('users.index', [
+            'users' => User::latest('id')->paginate(3)
+        ]);
+    }
+
+    /**
+     * Show the form for creating a new resource.
+     */
+    public function create(): View
+    {
+        return view('users.create', [
+            'roles' => Role::pluck('name')->all()
+        ]);
     }
 
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(StoreUserRequest $request): RedirectResponse
     {
-        $student = new student;
+        $input = $request->all();
+        $input['password'] = Hash::make($request->password);
 
-        $student->name=$request->name;
-        $student->email=$request->email;
-        $student->age=$request->age;
-        $student->city=$request->city; 
+        $user = User::create($input);
+        $user->assignRole($request->roles);
 
-        $student->save();
-        return response()->json([
-        'message' => 'Student    Created',
-        'status' => 'success',
-        'data' => $student
-        ]);
-
-       
+        return redirect()->route('users.index')
+                ->withSuccess('New user is added successfully.');
     }
 
     /**
      * Display the specified resource.
      */
-    public function show(student $student)
+    public function show(User $user): View
     {
-        return response()->json(['student'=>$student]);
+        return view('users.show', [
+            'user' => $user
+        ]);
+    }
+
+    /**
+     * Show the form for editing the specified resource.
+     */
+    public function edit(User $user): View
+    {
+        // Check Only Super Admin can update his own Profile
+        if ($user->hasRole('Super Admin')){
+            if($user->id != auth()->user()->id){
+                abort(403, 'USER DOES NOT HAVE THE RIGHT PERMISSIONS');
+            }
+        }
+
+        return view('users.edit', [
+            'user' => $user,
+            'roles' => Role::pluck('name')->all(),
+            'userRoles' => $user->roles->pluck('name')->all()
+        ]);
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, student $student)
+    public function update(UpdateUserRequest $request, User $user): RedirectResponse
     {
-        $student->name=$request->name;
-        $student->email=$request->email;
-        $student->age=$request->age;
-        $student->city=$request->city; 
+        $input = $request->all();
+ 
+        if(!empty($request->password)){
+            $input['password'] = Hash::make($request->password);
+        }else{
+            $input = $request->except('password');
+        }
+        
+        $user->update($input);
 
-        $student->save();
+        $user->syncRoles($request->roles);
 
-        return response()->json([
-            'message'=>'student update',
-            'status'=>'success',
-            'data'=>$student
-        ]);
+        return redirect()->back()
+                ->withSuccess('User is updated successfully.');
     }
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(student $student)
+    public function destroy(User $user): RedirectResponse
     {
-        $student->delete();
-        return response()->json([
-            'message'=>'student Delete',
-            'status'=>'success'
-        ]);
+        // About if user is Super Admin or User ID belongs to Auth User
+        if ($user->hasRole('Super Admin') || $user->id == auth()->user()->id)
+        {
+            abort(403, 'USER DOES NOT HAVE THE RIGHT PERMISSIONS');
+        }
+
+        $user->syncRoles([]);
+        $user->delete();
+        return redirect()->route('users.index')
+                ->withSuccess('User is deleted successfully.');
     }
 }
+
